@@ -1,6 +1,8 @@
 """
 Quiz Router — /api/quiz
 """
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 import httpx
@@ -9,7 +11,9 @@ import json
 from config import settings
 from db.mysql import execute, fetch_all, fetch_one, get_db
 from models.schemas import QuizAnswerRequest, QuizStartRequest
+from services.answer_evaluator import evaluate_open_answer, evaluate_mcq_answer
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -23,6 +27,8 @@ def _get_config(db: Session) -> dict:
         "pass_mark_pct": 60,
         "question_type": "both",
         "intro_text": "Welcome to the Quiz!",
+        "fuzzy_accept_threshold": 85,
+        "fuzzy_reject_threshold": 55,
     }
 
 
@@ -282,97 +288,6 @@ def _sanitize_feedback(feedback: str, is_correct: bool, language: str) -> str:
     return feedback
 
 
-async def _llm_evaluate(
-    question: str,
-    correct_answer: str,
-    user_answer: str,
-    language: str = "en",
-    lang_rules: str = ""
-) -> tuple[bool, str]:
-    """Use Ollama LLM to evaluate if user_answer is correct. Returns (is_correct, feedback)."""
-    lang_name = LANG_NAMES.get(language, "English")
-
-    # Build language-specific feedback instructions.
-    # IMPORTANT: Provide separate VERDICT=correct and VERDICT=incorrect examples so the
-    # LLM never applies the "correct" Tamil/Hindi word to an "incorrect" sentence,
-    # producing nonsense like "\u0b9a\u0bb0\u0bbf\u0baf\u0bbe\u0ba9 \u0ba4\u0bb5\u0bb1\u0bc8!" (correct mistake!).
-    if language == "ta":
-        lang_feedback_rule = (
-            "Give your FEEDBACK in SIMPLE, SPOKEN Tamil mixed with English words.\n"
-            "Keep ALL player names, team names (CSK, MI, RCB), and numbers in ENGLISH script.\n"
-            "NEVER transliterate English words into Tamil script.\n"
-            "\n"
-            "When VERDICT is 'correct', start FEEDBACK with '\u0b9a\u0bb0\u0bbf!' (meaning Correct). Example:\n"
-            "  FEEDBACK: \u0b9a\u0bb0\u0bbf! Yashasvi Jaiswal \u0ba4\u0bbe\u0ba9\u0bcd IPL-\u0bb2\u0bcd fastest 50 \u0b85\u0b9f\u0bbf\u0b9a\u0bcd\u0b9a\u0bbe\u0bb0\u0bc1.\n"
-            "\n"
-            "When VERDICT is 'incorrect', start FEEDBACK with '\u0ba4\u0bb5\u0bb1\u0bc1.' (meaning Wrong). Example:\n"
-            "  FEEDBACK: \u0ba4\u0bb5\u0bb1\u0bc1. correct answer Yashasvi Jaiswal, Virat Kohli \u0b87\u0bb2\u0bcd\u0bb2.\n"
-        )
-    elif language == "hi":
-        lang_feedback_rule = (
-            "Give your FEEDBACK in SIMPLE, SPOKEN Hindi mixed with English words.\n"
-            "Keep ALL player names, team names (CSK, MI, RCB), and numbers in ENGLISH script.\n"
-            "NEVER transliterate English words into Hindi script.\n"
-            "\n"
-            "When VERDICT is 'correct', start FEEDBACK with '\u0938\u0939\u0940!' (meaning Correct). Example:\n"
-            "  FEEDBACK: \u0938\u0939\u0940! Yashasvi Jaiswal \u0928\u0947 IPL \u092e\u0947\u0902 fastest 50 \u092e\u093e\u0930\u093e\u0964\n"
-            "\n"
-            "When VERDICT is 'incorrect', start FEEDBACK with '\u0917\u0932\u0924.' (meaning Wrong). Example:\n"
-            "  FEEDBACK: \u0917\u0932\u0924. \u0938\u0939\u0940 answer Yashasvi Jaiswal \u0939\u0948, Virat Kohli \u0928\u0939\u0940\u0902\u0964\n"
-        )
-    else:
-        lang_feedback_rule = f"Give your FEEDBACK in {lang_name}.\n"
-
-    rules_section = f"\nAdditional language rules:\n{lang_rules}\n" if lang_rules else ""
-    prompt = (
-        f"You are a strict but fair IPL cricket quiz evaluator.\n"
-        f"Question: {question}\n"
-        f"Correct Answer: {correct_answer}\n"
-        f"Student's Answer: {user_answer}\n\n"
-        f"Is the student's answer correct?\n"
-        f"ACCEPT the answer if any of these are true:\n"
-        f"  - It is an exact or near-exact match (spelling variants, extra spaces, case)\n"
-        f"  - It is a well-known abbreviation, nickname, or synonym:\n"
-        f"      * Stadium aliases: 'Chepauk' or 'Chepauk Stadium' = 'M. A. Chidambaram Stadium'\n"
-        f"      * Stadium aliases: 'Wankhede' = 'Wankhede Stadium'\n"
-        f"      * Stadium aliases: 'Eden' or 'Eden Gardens' = 'Eden Gardens'\n"
-        f"      * Stadium aliases: 'Chinnaswamy' = 'M. Chinnaswamy Stadium'\n"
-        f"      * Player nicknames: 'Captain Cool' or 'Dhoni' or 'MSD' = 'MS Dhoni'\n"
-        f"      * Player nicknames: 'Universe Boss' or 'Gayle' = 'Chris Gayle'\n"
-        f"      * 'CSK' = 'Chennai Super Kings', 'MI' = 'Mumbai Indians', etc.\n"
-        f"  - It is a partial but unambiguous answer (e.g. 'Dhoni' for 'MS Dhoni')\n"
-        f"  - The core factual meaning is the same even if phrased differently\n"
-        f"REJECT only if the answer is factually wrong or refers to a different entity.\n"
-        f"{lang_feedback_rule}{rules_section}"
-        f"Reply in this exact format:\n"
-        f"VERDICT: correct\nFEEDBACK: <one sentence>\n"
-        f"or\n"
-        f"VERDICT: incorrect\nFEEDBACK: <one sentence explaining why and what the correct answer is>"
-    )
-    try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            r = await client.post(
-                f"{settings.ollama_host}/api/generate",
-                json={"model": settings.llm_model, "prompt": prompt, "stream": False},
-            )
-            r.raise_for_status()
-            text = r.json().get("response", "").strip()
-
-        verdict  = "incorrect"
-        feedback = "Could not evaluate."
-        for line in text.splitlines():
-            if line.upper().startswith("VERDICT:"):
-                verdict_word = line.split(":", 1)[-1].strip().lower().rstrip(".,!")
-                verdict = "correct" if verdict_word == "correct" else "incorrect"
-            if line.upper().startswith("FEEDBACK:"):
-                feedback = line.split(":", 1)[-1].strip()
-
-        is_correct = verdict == "correct"
-        sanitized_feedback = _sanitize_feedback(feedback, is_correct, language)
-        return is_correct, sanitized_feedback
-
-    except Exception as e:
-        # Fallback: exact match
         is_correct = user_answer.strip().lower() == correct_answer.strip().lower()
         fallback_feedback = "Auto-evaluated." if is_correct else f"Correct answer: {correct_answer}"
         return is_correct, _sanitize_feedback(fallback_feedback, is_correct, language)
@@ -570,7 +485,8 @@ async def submit_answer(body: QuizAnswerRequest, db: Session = Depends(get_db)) 
     )
     marks_per_q = session["marks_per_q"] if session else 1
 
-    # MCQ: exact match; open: LLM evaluation
+    # MCQ: exact match; open: semantic evaluation
+    cfg        = _get_config(db)
     lang_rules = _get_lang_rules(db)
 
     # Pick the language-appropriate correct answer for MCQ comparison and feedback.
@@ -583,18 +499,37 @@ async def submit_answer(body: QuizAnswerRequest, db: Session = Depends(get_db)) 
     )
 
     if question["type"] == "mcq":
-        # Compare against the localized answer so Tamil/Hindi option text matches correctly
-        is_correct = body.user_answer.strip().lower() == localized_answer.strip().lower()
+        # Strict exact match — options are shown on screen, no semantic eval needed
+        is_correct = evaluate_mcq_answer(body.user_answer, localized_answer)
+        eval_method = "mcq_exact"
         lang = body.language if body.language in _MCQ_CORRECT else "en"
         if is_correct:
             feedback = _MCQ_CORRECT[lang]
         else:
-            # Show the localized answer in the feedback, fall back to English if not translated
             feedback = _MCQ_INCORRECT[lang].format(answer=localized_answer)
     else:
-        is_correct, feedback = await _llm_evaluate(
-            question["question"], question["answer"], body.user_answer,
-            body.language, lang_rules
+        # Load aliases for this correct answer from answer_aliases table
+        alias_rows = fetch_all(
+            db,
+            "SELECT alias FROM answer_aliases WHERE canonical = :canonical",
+            {"canonical": question["answer"]},
+        )
+        aliases = [r["alias"] for r in alias_rows] if alias_rows else []
+
+        # Load fuzzy thresholds from quiz_config (fallback to safe defaults)
+        fuzzy_accept = int(cfg.get("fuzzy_accept_threshold") or 85)
+        fuzzy_reject = int(cfg.get("fuzzy_reject_threshold") or 55)
+
+        # Always evaluate against English canonical answer (MySQL source of truth)
+        is_correct, feedback, eval_method = await evaluate_open_answer(
+            question=question["question"],
+            correct_answer=question["answer"],   # English canonical
+            user_answer=body.user_answer,
+            language=body.language,
+            lang_rules=lang_rules,
+            aliases=aliases,
+            fuzzy_accept=fuzzy_accept,
+            fuzzy_reject=fuzzy_reject,
         )
 
     execute(
@@ -624,12 +559,15 @@ async def submit_answer(body: QuizAnswerRequest, db: Session = Depends(get_db)) 
     if show_debug and question["type"] == "open":
         lang_name = {"en": "English", "ta": "Tamil", "hi": "Hindi"}.get(body.language, "English")
         debug_prompt = (
-            f"=== QUIZ EVALUATION PROMPT ===\n"
-            f"Question: {question['question']}\n"
+            f"=== QUIZ EVALUATION ===\n"
+            f"Method:         {eval_method}\n"
+            f"Question:       {question['question']}\n"
             f"Correct Answer: {question['answer']}\n"
-            f"Student's Answer: {body.user_answer}\n"
-            f"Evaluate in: {lang_name}\n"
-            f"Language Rules:\n{lang_rules}"
+            f"Student Answer: {body.user_answer}\n"
+            f"Language:       {lang_name}\n"
+            f"Aliases loaded: {aliases if question['type'] == 'open' else 'N/A (MCQ)'}\n"
+            f"Fuzzy thresholds: accept>={fuzzy_accept if question['type'] == 'open' else 'N/A'} "
+            f"reject<{fuzzy_reject if question['type'] == 'open' else 'N/A'}"
         )
 
     return {
@@ -637,6 +575,7 @@ async def submit_answer(body: QuizAnswerRequest, db: Session = Depends(get_db)) 
         "correct_answer": question["answer"],
         "feedback":       feedback,
         "marks_awarded":  marks_per_q if is_correct else 0,
+        "eval_method":    eval_method,
         "debug_prompt":   debug_prompt,
     }
 

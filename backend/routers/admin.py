@@ -406,3 +406,75 @@ def set_prompt_debug(db: Session = Depends(get_db), _=Depends(_require_admin)):
         {"v": new_val},
     )
     return {"show_prompt_debug": bool(new_val)}
+
+
+# ── Answer Aliases ─────────────────────────────────────────────
+
+
+class AliasCreateBody(BaseModel):
+    knowledge_file_id: int
+    canonical: str           # "Chennai Super Kings"
+    alias: str               # "CSK"
+
+
+@router.get("/aliases")
+def list_aliases(db: Session = Depends(get_db), _=Depends(_require_admin)):
+    """Return all answer aliases, grouped with their knowledge file name."""
+    rows = fetch_all(db, """
+        SELECT aa.id, aa.canonical, aa.alias, aa.created_at,
+               kf.filename AS knowledge_file
+        FROM answer_aliases aa
+        JOIN knowledge_files kf ON aa.knowledge_file_id = kf.id
+        ORDER BY kf.filename, aa.canonical, aa.alias
+    """, {})
+    return rows or []
+
+
+@router.post("/aliases")
+def add_alias(body: AliasCreateBody, db: Session = Depends(get_db), _=Depends(_require_admin)):
+    """
+    Add a canonical → alias mapping for a knowledge file.
+    When the knowledge file is deleted, this alias is auto-deleted (CASCADE).
+    """
+    # Verify knowledge file exists
+    kf = fetch_one(db, "SELECT id FROM knowledge_files WHERE id = :id", {"id": body.knowledge_file_id})
+    if not kf:
+        raise HTTPException(status_code=404, detail="Knowledge file not found.")
+
+    # Prevent duplicate
+    existing = fetch_one(db,
+        "SELECT id FROM answer_aliases WHERE knowledge_file_id = :fid AND canonical = :c AND alias = :a",
+        {"fid": body.knowledge_file_id, "c": body.canonical.strip(), "a": body.alias.strip()},
+    )
+    if existing:
+        raise HTTPException(status_code=409, detail="Alias already exists.")
+
+    execute(db,
+        "INSERT INTO answer_aliases (knowledge_file_id, canonical, alias) VALUES (:fid, :c, :a)",
+        {"fid": body.knowledge_file_id, "c": body.canonical.strip(), "a": body.alias.strip()},
+    )
+    return {"status": "created", "canonical": body.canonical, "alias": body.alias}
+
+
+@router.delete("/aliases/{alias_id}")
+def delete_alias(alias_id: int, db: Session = Depends(get_db), _=Depends(_require_admin)):
+    """Remove a single alias entry."""
+    row = fetch_one(db, "SELECT id FROM answer_aliases WHERE id = :id", {"id": alias_id})
+    if not row:
+        raise HTTPException(status_code=404, detail="Alias not found.")
+    execute(db, "DELETE FROM answer_aliases WHERE id = :id", {"id": alias_id})
+    return {"status": "deleted", "id": alias_id}
+
+
+@router.get("/aliases/by-canonical")
+def get_aliases_for_canonical(
+    canonical: str,
+    db: Session = Depends(get_db),
+    _=Depends(_require_admin),
+):
+    """Fetch all aliases for a specific canonical answer string (for live preview)."""
+    rows = fetch_all(db,
+        "SELECT id, alias, created_at FROM answer_aliases WHERE canonical = :c",
+        {"c": canonical},
+    )
+    return {"canonical": canonical, "aliases": rows or []}

@@ -100,13 +100,15 @@ CREATE TABLE IF NOT EXISTS quiz_sessions (
 
 -- ─── Quiz Config (global) ─────────────────────────────────────
 CREATE TABLE IF NOT EXISTS quiz_config (
-    id              INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    num_questions   INT UNSIGNED NOT NULL DEFAULT 10,
-    marks_per_q     INT UNSIGNED NOT NULL DEFAULT 1,
-    pass_mark_pct   INT UNSIGNED NOT NULL DEFAULT 60,
-    question_type   ENUM('mcq','open','both') NOT NULL DEFAULT 'both',
-    intro_text      TEXT NULL,
-    updated_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    id                      INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    num_questions           INT UNSIGNED NOT NULL DEFAULT 10,
+    marks_per_q             INT UNSIGNED NOT NULL DEFAULT 1,
+    pass_mark_pct           INT UNSIGNED NOT NULL DEFAULT 60,
+    question_type           ENUM('mcq','open','both') NOT NULL DEFAULT 'both',
+    intro_text              TEXT NULL,
+    fuzzy_accept_threshold  INT UNSIGNED NOT NULL DEFAULT 85,   -- score >= this → CORRECT without LLM
+    fuzzy_reject_threshold  INT UNSIGNED NOT NULL DEFAULT 55,   -- score <  this → WRONG  without LLM
+    updated_at              DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
 
 -- ─── Quiz Answers ────────────────────────────────────────────
@@ -145,3 +147,18 @@ CREATE TABLE IF NOT EXISTS global_ai_settings (
     created_at                 DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at                 DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
+
+-- ─── Answer Aliases ──────────────────────────────────────────
+-- Links canonical answers to their common aliases per knowledge file.
+-- Aliases are deleted automatically (ON DELETE CASCADE) when the
+-- knowledge file is removed from admin — zero manual cleanup.
+CREATE TABLE IF NOT EXISTS answer_aliases (
+    id                INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    knowledge_file_id INT UNSIGNED  NOT NULL,
+    canonical         VARCHAR(500)  NOT NULL COLLATE utf8mb4_unicode_ci,  -- e.g. "Chennai Super Kings"
+    alias             VARCHAR(500)  NOT NULL COLLATE utf8mb4_unicode_ci,  -- e.g. "CSK"
+    created_at        DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (knowledge_file_id)
+        REFERENCES knowledge_files(id) ON DELETE CASCADE,
+    INDEX idx_canonical (canonical(100))
+) ENGINE=InnoDB CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;

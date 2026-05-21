@@ -25,3 +25,4 @@ pydantic-settings==2.3.0
 # Utilities
 python-dotenv==1.0.1
 mysql-connector-python==8.4.0
+rapidfuzz==3.9.3
