@@ -60,23 +60,26 @@ cd quizchatbot
 
 ## Step 3 — Environment Configuration
 
-The app runs with sensible defaults. No changes needed for local development:
-
 ```bash
-# The .env.example is already pre-configured for local Docker
-# Only copy it if you want to customise (optional for local dev)
 cp .env.example .env
 ```
 
-Key settings in `docker-compose.yml` (already set):
+The `.env` file is your personal config. Docker Compose reads it automatically — **you never need to edit `docker-compose.yml` directly.**
 
-| Variable | Default | Description |
+All values have working defaults. Only edit `.env` if you need to customise:
+
+| What to change | Variable in `.env` | Example |
 |---|---|---|
-| `OLLAMA_HOST` | `http://host.docker.internal:11434` | Ollama on your host machine |
-| `LLM_MODEL` | `qwen2.5:7b` | LLM for chat + quiz generation |
-| `EMBED_MODEL` | `nomic-embed-text` | Embedding model for RAG |
-| `DB_NAME` | `quizchatbot` | MySQL database name |
-| `API_SECRET_KEY` | `change_this_...` | **Change this in production!** |
+| **Different LLM model** | `LLM_MODEL` | `LLM_MODEL=llama3.2:3b` |
+| **Different embedding model** | `EMBED_MODEL` | `EMBED_MODEL=mxbai-embed-large` |
+| **Ollama on different port** | `OLLAMA_HOST` | `OLLAMA_HOST=http://host.docker.internal:11435` |
+| **Frontend port conflict** | `FRONTEND_PORT` | `FRONTEND_PORT=8091` |
+| **API port conflict** | `API_PORT` | `API_PORT=8101` |
+| **ChromaDB port conflict** | `CHROMA_PORT_HOST` | `CHROMA_PORT_HOST=8201` |
+| **MySQL port conflict** | `MYSQL_PORT_HOST` | `MYSQL_PORT_HOST=3308` |
+| **Production security** | `API_SECRET_KEY` | any strong random string |
+
+> If you don't copy `.env.example`, Docker uses built-in defaults and everything still works for a standard local setup.
 
 ---
 
@@ -190,18 +193,20 @@ docker compose exec api python scripts/ingest_knowledge_base.py --file captains.
 ```
 
 ### Port conflicts
-If 8090 / 8100 / 8200 / 3307 are already in use, edit `docker-compose.yml`:
-```yaml
-ports:
-  - "9090:80"   # change left side only
+If 8090 / 8100 / 8200 / 3307 are already in use, edit `.env`:
+```env
+FRONTEND_PORT=8091
+API_PORT=8101
+CHROMA_PORT_HOST=8201
+MYSQL_PORT_HOST=3308
 ```
+Then restart: `docker compose up -d`
 
 ### Windows — Ollama not reachable from Docker
-On Windows, `host.docker.internal` may not resolve. Use your machine's IP:
-```yaml
-# docker-compose.yml
-environment:
-  - OLLAMA_HOST=http://192.168.x.x:11434   # your machine's LAN IP
+On Windows, `host.docker.internal` may not resolve. Use your machine's IP.
+Edit `.env`:
+```env
+OLLAMA_HOST=http://192.168.x.x:11434
 ```
 
 ---

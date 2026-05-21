@@ -6,7 +6,7 @@ services:
       dockerfile: Dockerfile
     container_name: quizchatbot_php
     ports:
-      - "8090:80"
+      - "${FRONTEND_PORT:-8090}:80"
     volumes:
       - ./frontend:/var/www/html
     depends_on:
@@ -15,7 +15,7 @@ services:
       - quizchatbot_net
     environment:
       - API_BASE_URL=http://api:8000
-      - API_PUBLIC_URL=http://localhost:8100
+      - API_PUBLIC_URL=http://localhost:${API_PORT:-8100}
 
   # ─── FastAPI Backend ───────────────────────────────────────────
   api:
@@ -24,7 +24,7 @@ services:
       dockerfile: Dockerfile
     container_name: quizchatbot_api
     ports:
-      - "8100:8000"
+      - "${API_PORT:-8100}:8000"
     volumes:
       - ./backend:/app
       - ./knowledge_base:/app/knowledge_base
@@ -34,18 +34,18 @@ services:
     networks:
       - quizchatbot_net
     environment:
-      - DB_HOST=mysql
-      - DB_PORT=3306
-      - DB_NAME=quizchatbot
-      - DB_USER=quizuser
-      - DB_PASS=quizpass
-      - CHROMA_HOST=chromadb
-      - CHROMA_PORT=8000
-      - CHROMA_COLLECTION=knowledge_base
-      - OLLAMA_HOST=http://host.docker.internal:11434
-      - LLM_MODEL=qwen2.5:7b
-      - EMBED_MODEL=nomic-embed-text
-      - API_SECRET_KEY=change_this_to_a_strong_secret_key
+      - DB_HOST=${DB_HOST:-mysql}
+      - DB_PORT=${DB_PORT:-3306}
+      - DB_NAME=${DB_NAME:-quizchatbot}
+      - DB_USER=${DB_USER:-quizuser}
+      - DB_PASS=${DB_PASS:-quizpass}
+      - CHROMA_HOST=${CHROMA_HOST:-chromadb}
+      - CHROMA_PORT=${CHROMA_PORT:-8000}
+      - CHROMA_COLLECTION=${CHROMA_COLLECTION:-knowledge_base}
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://host.docker.internal:11434}
+      - LLM_MODEL=${LLM_MODEL:-qwen2.5:7b}
+      - EMBED_MODEL=${EMBED_MODEL:-nomic-embed-text}
+      - API_SECRET_KEY=${API_SECRET_KEY:-change_this_to_a_strong_secret_key}
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
@@ -55,12 +55,12 @@ services:
     container_name: quizchatbot_mysql
     restart: always
     ports:
-      - "3307:3306"
+      - "${MYSQL_PORT_HOST:-3307}:3306"
     environment:
       - MYSQL_ROOT_PASSWORD=rootpass
-      - MYSQL_DATABASE=quizchatbot
-      - MYSQL_USER=quizuser
-      - MYSQL_PASSWORD=quizpass
+      - MYSQL_DATABASE=${DB_NAME:-quizchatbot}
+      - MYSQL_USER=${DB_USER:-quizuser}
+      - MYSQL_PASSWORD=${DB_PASS:-quizpass}
     volumes:
       - mysql_data:/var/lib/mysql
       - ./database/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql
@@ -73,7 +73,7 @@ services:
     image: chromadb/chroma:0.5.23
     container_name: quizchatbot_chroma
     ports:
-      - "8200:8000"
+      - "${CHROMA_PORT_HOST:-8200}:8000"
     volumes:
       - chroma_data:/chroma/chroma
     networks:
