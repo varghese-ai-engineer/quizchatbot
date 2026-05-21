@@ -474,6 +474,13 @@ function showScreen(name) {
 
 function resetQuiz() {
   sessionId = null; questions = []; currentIdx = 0; correctCount = 0;
+  answered = false; selectedOption = null;
+
+  // Restore Start Quiz button — it was left disabled/Loading from startQuiz()
+  const btn = document.getElementById('start-btn');
+  btn.disabled = false;
+  btn.innerHTML = '<i class="bi bi-play-fill me-2"></i>Start Quiz';
+
   showScreen('intro');
 }
 
