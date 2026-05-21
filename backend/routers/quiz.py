@@ -287,11 +287,6 @@ def _sanitize_feedback(feedback: str, is_correct: bool, language: str) -> str:
 
     return feedback
 
-
-        is_correct = user_answer.strip().lower() == correct_answer.strip().lower()
-        fallback_feedback = "Auto-evaluated." if is_correct else f"Correct answer: {correct_answer}"
-        return is_correct, _sanitize_feedback(fallback_feedback, is_correct, language)
-
 # ── Endpoints ─────────────────────────────────────────────────
 
 @router.get("/config")
