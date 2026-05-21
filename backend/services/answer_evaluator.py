@@ -308,14 +308,17 @@ async def _generate_feedback(
     user_answer: str,
     is_correct: bool,
     language: str,
-    lang_rules: str,
 ) -> str:
     """
     Generate one-sentence multilingual feedback.
     Verdict is passed in — the LLM cannot contradict it.
+
+    Language is determined ONLY by the user's language code.
+    Domain AI rules (knowledge_files.ai_language_rules) are intentionally
+    excluded here — they are for chatbot responses, not quiz grading.
+    Including them caused domain Tamil rules to override English user selection.
     """
     verdict_word = "correct" if is_correct else "incorrect"
-    lang_rules_section = f"\nAdditional language rules:\n{lang_rules}\n" if lang_rules else ""
 
     prompt = (
         f"You are a quiz feedback generator.\n"
@@ -324,7 +327,6 @@ async def _generate_feedback(
         f"Student Answer: {user_answer}\n"
         f"Evaluation Verdict: {verdict_word}\n\n"
         f"{_lang_feedback_rules(language)}"
-        f"{lang_rules_section}"
         "Write exactly ONE sentence of feedback for the student.\n"
         "The verdict is already decided — do NOT contradict it.\n"
         "Reply format:\n"
@@ -400,7 +402,7 @@ async def evaluate_open_answer(
     # ── Guard: blank answer ───────────────────────────────────────────────
     if not user_answer or not user_answer.strip():
         fb = await _generate_feedback(
-            question, correct_answer, user_answer, False, language, lang_rules
+            question, correct_answer, user_answer, False, language
         )
         return False, fb, "empty"
 
@@ -408,7 +410,7 @@ async def evaluate_open_answer(
     if alias_match(user_answer, aliases):
         logger.info("Eval alias ✅  %r in aliases", user_answer)
         fb = await _generate_feedback(
-            question, correct_answer, user_answer, True, language, lang_rules
+            question, correct_answer, user_answer, True, language
         )
         return True, fb, "alias"
 
@@ -416,7 +418,7 @@ async def evaluate_open_answer(
     if acronym_match(user_answer, correct_answer):
         logger.info("Eval acronym ✅  %r ↔ %r", user_answer, correct_answer)
         fb = await _generate_feedback(
-            question, correct_answer, user_answer, True, language, lang_rules
+            question, correct_answer, user_answer, True, language
         )
         return True, fb, "acronym"
 
@@ -424,7 +426,7 @@ async def evaluate_open_answer(
     if exact_match(user_answer, correct_answer):
         logger.info("Eval exact ✅  %r == %r", user_answer, correct_answer)
         fb = await _generate_feedback(
-            question, correct_answer, user_answer, True, language, lang_rules
+            question, correct_answer, user_answer, True, language
         )
         return True, fb, "exact"
 
@@ -439,14 +441,14 @@ async def evaluate_open_answer(
     if decision is True:
         logger.info("Eval fuzzy ✅  score=%d >= %d", score, fuzzy_accept)
         fb = await _generate_feedback(
-            question, correct_answer, user_answer, True, language, lang_rules
+            question, correct_answer, user_answer, True, language
         )
         return True, fb, f"fuzzy:{score}"
 
     if decision is False:
         logger.info("Eval fuzzy ❌  score=%d < %d", score, fuzzy_reject)
         fb = await _generate_feedback(
-            question, correct_answer, user_answer, False, language, lang_rules
+            question, correct_answer, user_answer, False, language
         )
         return False, fb, f"fuzzy_reject:{score}"
 
@@ -457,7 +459,7 @@ async def evaluate_open_answer(
     logger.info("Eval LLM semantic → %s", "✅" if is_correct else "❌")
 
     fb = await _generate_feedback(
-        question, correct_answer, user_answer, is_correct, language, lang_rules
+        question, correct_answer, user_answer, is_correct, language
     )
     return is_correct, fb, f"llm_semantic:{score}"
 
