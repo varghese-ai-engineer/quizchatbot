@@ -322,6 +322,7 @@ class UpdateQuizConfigRequest(BaseModel):
     pass_mark_pct: int
     question_type: str  # mcq | open | both
     intro_text: str = ""
+    leniency_score: int = 50  # 0=strict, 50=balanced (default), 100=very easy
 
 
 @router.put("/quiz-config")
@@ -334,18 +335,22 @@ def update_quiz_config(body: UpdateQuizConfigRequest, db: Session = Depends(get_
         raise HTTPException(status_code=400, detail="marks_per_q must be 1–100")
     if not (1 <= body.pass_mark_pct <= 100):
         raise HTTPException(status_code=400, detail="pass_mark_pct must be 1–100")
+    if not (0 <= body.leniency_score <= 100):
+        raise HTTPException(status_code=400, detail="leniency_score must be 0–100")
 
     execute(db,
-        """INSERT INTO quiz_config (id, num_questions, marks_per_q, pass_mark_pct, question_type, intro_text)
-           VALUES (1, :nq, :mpq, :pmp, :qt, :it)
+        """INSERT INTO quiz_config (id, num_questions, marks_per_q, pass_mark_pct, question_type, intro_text, leniency_score)
+           VALUES (1, :nq, :mpq, :pmp, :qt, :it, :ls)
            ON DUPLICATE KEY UPDATE
                num_questions=VALUES(num_questions),
                marks_per_q=VALUES(marks_per_q),
                pass_mark_pct=VALUES(pass_mark_pct),
                question_type=VALUES(question_type),
-               intro_text=VALUES(intro_text)""",
+               intro_text=VALUES(intro_text),
+               leniency_score=VALUES(leniency_score)""",
         {"nq": body.num_questions, "mpq": body.marks_per_q,
-         "pmp": body.pass_mark_pct, "qt": body.question_type, "it": body.intro_text},
+         "pmp": body.pass_mark_pct, "qt": body.question_type,
+         "it": body.intro_text, "ls": body.leniency_score},
     )
     return {"status": "ok"}
 

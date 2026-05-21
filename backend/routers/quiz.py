@@ -19,17 +19,44 @@ router = APIRouter()
 
 # ── Helpers ───────────────────────────────────────────────────
 
+def _leniency_to_thresholds(leniency: int) -> tuple[int, int]:
+    """
+    Convert a leniency slider value (0–100) to fuzzy accept/reject thresholds.
+
+    Piecewise linear, preserving current defaults at leniency=50:
+      leniency=0   → accept=100, reject=75  (ultra-strict — only exact/near-exact)
+      leniency=50  → accept=85,  reject=55  (current default, balanced)
+      leniency=100 → accept=55,  reject=20  (very easy — almost anything via LLM)
+
+    The LLM semantic zone is always (reject, accept).
+    """
+    l = max(0, min(100, int(leniency)))
+    if l <= 50:
+        accept = round(100 - l * 0.30)   # 100 → 85
+        reject = round(75  - l * 0.40)   # 75  → 55
+    else:
+        accept = round(85 - (l - 50) * 0.60)   # 85 → 55
+        reject = round(55 - (l - 50) * 0.70)   # 55 → 20
+    return max(55, accept), max(5, reject)
+
+
 def _get_config(db: Session) -> dict:
     cfg = fetch_one(db, "SELECT * FROM quiz_config WHERE id = 1", {})
-    return cfg or {
-        "num_questions": 10,
-        "marks_per_q": 1,
-        "pass_mark_pct": 60,
-        "question_type": "both",
-        "intro_text": "Welcome to the Quiz!",
-        "fuzzy_accept_threshold": 85,
-        "fuzzy_reject_threshold": 55,
-    }
+    if not cfg:
+        cfg = {
+            "num_questions": 10,
+            "marks_per_q": 1,
+            "pass_mark_pct": 60,
+            "question_type": "both",
+            "intro_text": "Welcome to the Quiz!",
+            "leniency_score": 50,
+        }
+    # Compute fuzzy thresholds from leniency_score (overrides raw DB columns if present)
+    leniency = int(cfg.get("leniency_score") or 50)
+    accept, reject = _leniency_to_thresholds(leniency)
+    cfg["fuzzy_accept_threshold"] = accept
+    cfg["fuzzy_reject_threshold"] = reject
+    return cfg
 
 
 # Words that indicate a line is NOT a rule instruction (e.g. leaked question text).
@@ -511,9 +538,12 @@ async def submit_answer(body: QuizAnswerRequest, db: Session = Depends(get_db)) 
         )
         aliases = [r["alias"] for r in alias_rows] if alias_rows else []
 
-        # Load fuzzy thresholds from quiz_config (fallback to safe defaults)
+        # Compute fuzzy thresholds from leniency_score
+        leniency     = int(cfg.get("leniency_score") or 50)
         fuzzy_accept = int(cfg.get("fuzzy_accept_threshold") or 85)
         fuzzy_reject = int(cfg.get("fuzzy_reject_threshold") or 55)
+        logger.debug("Fuzzy thresholds: leniency=%d accept>=%d reject<%d",
+                     leniency, fuzzy_accept, fuzzy_reject)
 
         # Always evaluate against English canonical answer (MySQL source of truth)
         is_correct, feedback, eval_method = await evaluate_open_answer(

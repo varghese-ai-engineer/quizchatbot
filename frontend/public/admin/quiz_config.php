@@ -34,6 +34,50 @@ if (($_SESSION['role'] ?? 'user') !== 'admin') {
 .type-card span { font-size: 0.8rem; font-weight: 600; }
 .save-success { color: var(--color-success); font-size: 0.85rem; }
 
+/* ── Leniency Slider ── */
+.leniency-wrap { padding: 0.25rem 0 0.5rem; }
+.leniency-track {
+  position: relative;
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 8px;
+  border-radius: 99px;
+  background: linear-gradient(to right, #ef4444 0%, #f59e0b 40%, #22c55e 100%);
+  outline: none;
+  cursor: pointer;
+}
+.leniency-track::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  background: #fff;
+  border: 3px solid var(--color-primary);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+  cursor: grab;
+  transition: transform 0.15s;
+}
+.leniency-track::-webkit-slider-thumb:active { transform: scale(1.2); cursor: grabbing; }
+.leniency-labels { display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--color-muted); margin-top: 0.35rem; }
+.leniency-badge {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  background: rgba(108,99,255,0.12); border: 1px solid rgba(108,99,255,0.25);
+  border-radius: 99px; padding: 0.25rem 0.75rem;
+  font-size: 0.78rem; font-weight: 600; color: var(--color-primary);
+  margin-top: 0.75rem;
+}
+.threshold-row { display: flex; gap: 0.75rem; margin-top: 0.75rem; flex-wrap: wrap; }
+.threshold-chip {
+  flex: 1; min-width: 130px;
+  background: var(--color-surface2); border: 1px solid var(--color-border);
+  border-radius: 10px; padding: 0.6rem 0.9rem; font-size: 0.8rem;
+}
+.threshold-chip .tc-label { color: var(--color-muted); font-size: 0.72rem; margin-bottom: 0.2rem; }
+.threshold-chip .tc-val   { font-weight: 700; font-size: 1rem; }
+.tc-accept .tc-val { color: #22c55e; }
+.tc-reject .tc-val { color: #ef4444; }
+.tc-llm    .tc-val { color: #f59e0b; }
+
 /* ── Debug Toggle ── */
 .debug-card { background: rgba(108,99,255,0.06); border: 1px solid rgba(108,99,255,0.2); border-radius: 14px; padding: 1.5rem 2rem; }
 .toggle-row  { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
@@ -134,6 +178,43 @@ if (($_SESSION['role'] ?? 'user') !== 'admin') {
         <p class="text-muted small mb-3">This text is shown to users on the quiz introduction screen before they start.</p>
         <textarea id="intro-text" class="admin-textarea" rows="4"
           placeholder="Welcome to the quiz! Here's what you need to know..."></textarea>
+      </div>
+
+      <!-- Answer Leniency -->
+      <div class="config-card mt-4">
+        <h5 class="mb-1"><i class="bi bi-sliders me-2"></i>Answer Leniency</h5>
+        <p class="text-muted small mb-3">
+          Controls how strictly open-ended answers are evaluated.
+          <strong>0 = exact answers only</strong>, <strong>100 = very flexible</strong> (abbreviations, nicknames, partials all accepted).
+        </p>
+        <div class="leniency-wrap">
+          <input type="range" id="leniency-slider" class="leniency-track"
+            min="0" max="100" step="1" value="50"
+            oninput="updateLeniency(this.value)">
+          <div class="leniency-labels">
+            <span>🔒 Strict (0)</span>
+            <span id="leniency-val-label">Balanced (50)</span>
+            <span>🎯 Very Easy (100)</span>
+          </div>
+        </div>
+        <div class="leniency-badge">
+          <i class="bi bi-activity"></i>
+          <span id="leniency-mode-text">Balanced — abbreviations &amp; nicknames accepted</span>
+        </div>
+        <div class="threshold-row">
+          <div class="threshold-chip tc-accept">
+            <div class="tc-label">✅ Auto CORRECT if score ≥</div>
+            <div class="tc-val" id="tc-accept">85</div>
+          </div>
+          <div class="threshold-chip tc-llm">
+            <div class="tc-label">🤖 LLM evaluates score</div>
+            <div class="tc-val" id="tc-llm-zone">55 – 84</div>
+          </div>
+          <div class="threshold-chip tc-reject">
+            <div class="tc-label">❌ Auto WRONG if score &lt;</div>
+            <div class="tc-val" id="tc-reject">55</div>
+          </div>
+        </div>
       </div>
 
       <!-- Developer Settings -->
@@ -248,6 +329,11 @@ async function loadConfig() {
   document.getElementById('pass-mark-pct').value  = d.pass_mark_pct;
   document.getElementById('intro-text').value     = d.intro_text || '';
   selectType(d.question_type || 'both');
+
+  const leniency = d.leniency_score ?? 50;
+  document.getElementById('leniency-slider').value = leniency;
+  updateLeniency(leniency);
+
   updatePreview();
 }
 
@@ -265,6 +351,7 @@ async function saveConfig() {
         pass_mark_pct:  parseInt(document.getElementById('pass-mark-pct').value),
         question_type:  selectedType,
         intro_text:     document.getElementById('intro-text').value,
+        leniency_score: parseInt(document.getElementById('leniency-slider').value),
       })
     });
     const d = await r.json();
@@ -290,6 +377,40 @@ async function saveConfig() {
 
 loadConfig();
 loadDebugToggle();
+
+// ── Leniency slider logic ─────────────────────────────────────
+function leniencyToThresholds(l) {
+  // Mirror of backend _leniency_to_thresholds()
+  l = Math.max(0, Math.min(100, l));
+  let accept, reject;
+  if (l <= 50) {
+    accept = Math.round(100 - l * 0.30);
+    reject = Math.round(75  - l * 0.40);
+  } else {
+    accept = Math.round(85 - (l - 50) * 0.60);
+    reject = Math.round(55 - (l - 50) * 0.70);
+  }
+  return { accept: Math.max(55, accept), reject: Math.max(5, reject) };
+}
+
+function updateLeniency(val) {
+  val = parseInt(val);
+  const { accept, reject } = leniencyToThresholds(val);
+
+  // Label
+  let label, mode;
+  if      (val <= 10)  { label = `Strict (${val})`;       mode = '🔒 Very strict — only exact answers accepted'; }
+  else if (val <= 35)  { label = `Strict (${val})`;       mode = '🔒 Strict — minor variations accepted'; }
+  else if (val <= 65)  { label = `Balanced (${val})`;     mode = '⚖️ Balanced — abbreviations & nicknames accepted'; }
+  else if (val <= 85)  { label = `Lenient (${val})`;      mode = '🎯 Lenient — partial answers accepted'; }
+  else                 { label = `Very Easy (${val})`;    mode = '🎯 Very easy — almost any relevant answer accepted'; }
+
+  document.getElementById('leniency-val-label').textContent  = label;
+  document.getElementById('leniency-mode-text').textContent  = mode;
+  document.getElementById('tc-accept').textContent           = accept;
+  document.getElementById('tc-reject').textContent           = reject;
+  document.getElementById('tc-llm-zone').textContent         = `${reject} – ${accept - 1}`;
+}
 
 async function loadDebugToggle() {
   try {
