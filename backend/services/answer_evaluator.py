@@ -251,22 +251,43 @@ async def llm_semantic_check(
 def _lang_feedback_rules(language: str) -> str:
     if language == "ta":
         return (
-            "Give feedback in SIMPLE, SPOKEN Tamil mixed with English words.\n"
-            "Keep ALL proper nouns, abbreviations, and numbers in ENGLISH script.\n"
-            "NEVER transliterate English words into Tamil script.\n\n"
-            "When answer is correct:   start with 'சரி!'  (Correct)\n"
-            "When answer is incorrect: start with 'தவறு.' (Wrong)\n"
+            "Give feedback in SIMPLE, SPOKEN Tanglish — the natural Tamil+English mix that\n"
+            "educated Indian users actually speak. NOT formal written Tamil.\n\n"
+            "STRICT RULES:\n"
+            "1. Keep ALL proper nouns, names, numbers, technical terms in ENGLISH script.\n"
+            "2. NEVER transliterate English words into Tamil script.\n"
+            "3. Use Tamil ONLY for verbs and connectors: தான், வென்றுள்ளார், சரியான, இல்ல, தான்.\n\n"
+            "When answer is CORRECT — start with 'சரி!' then ONE Tanglish sentence.\n"
+            "  Pattern: சரி! [student_answer] தான் correct — [brief fact in Tanglish].\n"
+            "  Example: சரி! MS Dhoni தான் correct — 5 IPL titles வென்னுட்டாரு.\n"
+            "  Example: சரி! Python தான் correct — interpreted language தான்.\n\n"
+            "When answer is INCORRECT — start with 'தவறு.' then ONE Tanglish sentence.\n"
+            "  Pattern: தவறு. Correct answer [correct_answer] தான், [brief reason].\n"
+            "  Example: தவறு. Correct answer MS Dhoni தான், not Kohli.\n"
+            "  Example: தவறு. Correct answer Python தான், not Java.\n\n"
+            "BANNED (never write these):\n"
+            "  இபிஎல் → always write IPL\n"
+            "  திடல்களை / காலிகளை → always write titles\n"
+            "  ஏப்பயங்களும் / மட்டுமே → meaningless filler, remove it\n"
         )
     if language == "hi":
         return (
-            "Give feedback in SIMPLE, SPOKEN Hindi mixed with English words.\n"
-            "Keep ALL proper nouns, abbreviations, and numbers in ENGLISH script.\n"
-            "NEVER transliterate English words into Hindi script.\n\n"
-            "When answer is correct:   start with 'सही!'  (Correct)\n"
-            "When answer is incorrect: start with 'गलत.'  (Wrong)\n"
+            "Give feedback in SIMPLE, SPOKEN Hinglish — the natural Hindi+English mix\n"
+            "that educated Indian users actually speak. NOT formal written Hindi.\n\n"
+            "STRICT RULES:\n"
+            "1. Keep ALL proper nouns, names, numbers, technical terms in ENGLISH script.\n"
+            "2. NEVER transliterate English words into Hindi script.\n"
+            "3. Use Hindi ONLY for verbs and connectors: है, हैं, था, ने, का, की.\n\n"
+            "When answer is CORRECT — start with 'सही!' then ONE Hinglish sentence.\n"
+            "  Example: सही! MS Dhoni ने 5 IPL titles जीते हैं.\n"
+            "  Example: सही! Python ही correct answer है.\n\n"
+            "When answer is INCORRECT — start with 'गलत.' then ONE Hinglish sentence.\n"
+            "  Example: गलत. Correct answer MS Dhoni है, not Kohli.\n"
+            "  Example: गलत. Correct answer Python है, Java नहीं.\n\n"
+            "BANNED: आईपीएल → always write IPL\n"
         )
     lang = LANG_NAMES.get(language, "English")
-    return f"Give feedback in {lang}.\n"
+    return f"Give feedback in {lang} in ONE short sentence.\n"
 
 
 async def _generate_feedback(
