@@ -1,0 +1,88 @@
+services:
+  # ─── PHP Frontend ─────────────────────────────────────────────
+  php:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: quizchatbot_php
+    ports:
+      - "8090:80"
+    volumes:
+      - ./frontend:/var/www/html
+    depends_on:
+      - api
+    networks:
+      - quizchatbot_net
+    environment:
+      - API_BASE_URL=http://api:8000
+      - API_PUBLIC_URL=http://localhost:8100
+
+  # ─── FastAPI Backend ───────────────────────────────────────────
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: quizchatbot_api
+    ports:
+      - "8100:8000"
+    volumes:
+      - ./backend:/app
+      - ./knowledge_base:/app/knowledge_base
+    depends_on:
+      - mysql
+      - chromadb
+    networks:
+      - quizchatbot_net
+    environment:
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_NAME=quizchatbot
+      - DB_USER=quizuser
+      - DB_PASS=quizpass
+      - CHROMA_HOST=chromadb
+      - CHROMA_PORT=8000
+      - CHROMA_COLLECTION=knowledge_base
+      - OLLAMA_HOST=http://host.docker.internal:11434
+      - LLM_MODEL=qwen2.5:7b
+      - EMBED_MODEL=nomic-embed-text
+      - API_SECRET_KEY=change_this_to_a_strong_secret_key
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # ─── MySQL Database ────────────────────────────────────────────
+  mysql:
+    image: mysql:8.0
+    container_name: quizchatbot_mysql
+    restart: always
+    ports:
+      - "3307:3306"
+    environment:
+      - MYSQL_ROOT_PASSWORD=rootpass
+      - MYSQL_DATABASE=quizchatbot
+      - MYSQL_USER=quizuser
+      - MYSQL_PASSWORD=quizpass
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql
+      - ./database/seed.sql:/docker-entrypoint-initdb.d/02_seed.sql
+    networks:
+      - quizchatbot_net
+
+  # ─── ChromaDB Vector Database ─────────────────────────────────
+  chromadb:
+    image: chromadb/chroma:0.5.23
+    container_name: quizchatbot_chroma
+    ports:
+      - "8200:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+    networks:
+      - quizchatbot_net
+
+volumes:
+  mysql_data:
+  chroma_data:
+
+networks:
+  quizchatbot_net:
+    driver: bridge

@@ -1,0 +1,247 @@
+/* =============================================================
+   QuizChatbot Admin CSS
+   Prettier-formatted
+   ============================================================= */
+
+:root {
+  --color-bg:       #0b0f1a;
+  --color-surface:  #111827;
+  --color-surface2: #1a2035;
+  --color-border:   rgba(255,255,255,0.07);
+  --color-primary:  #6c63ff;
+  --color-accent:   #00d9c8;
+  --color-text:     #e8eaf0;
+  --color-muted:    #7b8096;
+  --color-danger:   #ef4444;
+  --color-success:  #22c55e;
+  --color-warn:     #f59e0b;
+  --font:           "Inter", system-ui, sans-serif;
+  --nav-h:          60px;
+  --transition:     0.2s ease;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  height: 100%; font-family: var(--font);
+  background: var(--color-bg); color: var(--color-text);
+
+  /* ── Override Bootstrap dark-mode variables ── */
+  --bs-secondary-color:     #9aa0b8;   /* .text-muted → readable on dark bg */
+  --bs-secondary-color-rgb: 154,160,184;
+  --bs-body-color:          #e8eaf0;
+  --bs-body-bg:             #0b0f1a;
+}
+
+/* ── Global Text Selection ────────────────────────────────────── */
+::selection      { background: rgba(108,99,255,0.55); color: #ffffff; }
+::-moz-selection { background: rgba(108,99,255,0.55); color: #ffffff; }
+
+
+/* ── Navbar ──────────────────────────────────────────────────── */
+.admin-nav {
+  position: fixed; top: 0; left: 0; right: 0; height: var(--nav-h);
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 1.5rem;
+  background: rgba(11,15,26,0.9);
+  border-bottom: 1px solid var(--color-border);
+  backdrop-filter: blur(16px);
+  z-index: 100;
+}
+
+.admin-brand {
+  font-size: 1rem; font-weight: 700;
+  background: linear-gradient(135deg, #fff, var(--color-accent));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.admin-nav-links { display: flex; align-items: center; gap: 0.5rem; }
+
+.admin-nav-links a {
+  display: flex; align-items: center;
+  padding: 0.4rem 0.9rem; border-radius: 8px;
+  font-size: 0.82rem; font-weight: 500;
+  color: var(--color-muted); text-decoration: none;
+  transition: background var(--transition), color var(--transition);
+}
+.admin-nav-links a:hover  { background: var(--color-surface2); color: var(--color-text); }
+.admin-nav-links a.active { background: rgba(108,99,255,0.15); color: var(--color-primary); }
+
+/* ── Container ───────────────────────────────────────────────── */
+.admin-container {
+  max-width: 1400px; margin: 0 auto;
+  padding: calc(var(--nav-h) + 2rem) 1.5rem 3rem;
+}
+
+/* ── Page Header ─────────────────────────────────────────────── */
+.admin-page-header {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 1rem; margin-bottom: 1.5rem;
+}
+.admin-page-title { font-size: 1.5rem; font-weight: 700; }
+.admin-page-sub   { font-size: 0.85rem; color: var(--color-muted); margin-top: 0.25rem; }
+
+/* ── Card ────────────────────────────────────────────────────── */
+.admin-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  overflow: hidden;
+}
+.admin-card-header {
+  padding: 0.9rem 1.25rem;
+  border-bottom: 1px solid var(--color-border);
+  font-weight: 600; font-size: 0.9rem;
+  display: flex; align-items: center;
+}
+.admin-card-body { padding: 1.25rem; }
+
+/* ── Buttons ─────────────────────────────────────────────────── */
+.btn-admin-primary {
+  display: inline-flex; align-items: center;
+  padding: 0.5rem 1.1rem; border-radius: 9px; border: none;
+  background: var(--color-primary); color: #fff;
+  font-family: var(--font); font-size: 0.82rem; font-weight: 600;
+  cursor: pointer; transition: background var(--transition), transform var(--transition);
+}
+.btn-admin-primary:hover { background: #8b85ff; transform: translateY(-1px); }
+
+.btn-admin-outline {
+  display: inline-flex; align-items: center;
+  padding: 0.5rem 1.1rem; border-radius: 9px;
+  border: 1px solid var(--color-border);
+  background: transparent; color: var(--color-text);
+  font-family: var(--font); font-size: 0.82rem; cursor: pointer;
+  transition: background var(--transition);
+}
+.btn-admin-outline:hover { background: var(--color-surface2); }
+
+.btn-icon {
+  width: 30px; height: 30px; border-radius: 7px; border: none;
+  background: rgba(255,255,255,0.05); color: var(--color-muted);
+  cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+  font-size: 0.85rem; transition: background var(--transition), color var(--transition);
+}
+.btn-icon:hover         { background: rgba(108,99,255,0.15); color: var(--color-primary); }
+.btn-icon-danger:hover  { background: rgba(239,68,68,0.15);  color: var(--color-danger);  }
+.btn-icon-warn:hover    { background: rgba(245,158,11,0.15); color: var(--color-warn);    }
+.btn-icon-success:hover { background: rgba(34,197,94,0.15);  color: var(--color-success); }
+
+/* ── Table ───────────────────────────────────────────────────── */
+.table-wrapper { overflow-x: auto; }
+
+.admin-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; color: var(--color-text); }
+.admin-table th {
+  padding: 0.75rem 1rem; text-align: left;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-muted); font-weight: 600;
+  font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+.admin-table td {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  vertical-align: middle;
+  color: var(--color-text);
+}
+.admin-table tr:last-child td { border-bottom: none; }
+.admin-table tr:hover td { background: rgba(255,255,255,0.02); }
+.row-inactive td { opacity: 0.5; }
+
+/* ── Badges ──────────────────────────────────────────────────── */
+.badge-success, .badge-danger, .badge-warning, .badge-info, .badge-outline, .domain-badge {
+  display: inline-block; padding: 0.2rem 0.55rem;
+  border-radius: 99px; font-size: 0.7rem; font-weight: 600;
+}
+.badge-success  { background: rgba(34,197,94,0.15);  color: var(--color-success); }
+.badge-danger   { background: rgba(239,68,68,0.15);  color: var(--color-danger);  }
+.badge-warning  { background: rgba(245,158,11,0.15); color: var(--color-warn);    }
+.badge-info     { background: rgba(108,99,255,0.15); color: var(--color-primary); }
+.badge-outline  { border: 1px solid var(--color-border); color: var(--color-muted); }
+.domain-badge   { background: rgba(0,217,200,0.12); color: var(--color-accent); }
+
+/* ── Forms ───────────────────────────────────────────────────── */
+.admin-input, .admin-textarea {
+  width: 100%; background: var(--color-surface2);
+  border: 1px solid var(--color-border); border-radius: 9px;
+  padding: 0.55rem 0.85rem; color: var(--color-text);
+  font-family: var(--font); font-size: 0.85rem; outline: none;
+  transition: border-color var(--transition);
+}
+.admin-input:focus, .admin-textarea:focus { border-color: var(--color-primary); }
+.admin-textarea { resize: vertical; line-height: 1.6; }
+.admin-label  { display: block; font-size: 0.78rem; color: var(--color-muted); margin-bottom: 0.4rem; }
+
+/* ── Inline Alert ─────────────────────────────────────────────── */
+.admin-alert-error {
+  background: rgba(239,68,68,0.12); border: 1px solid rgba(239,68,68,0.3);
+  color: #f87171; border-radius: 9px; padding: 0.6rem 0.9rem;
+  font-size: 0.82rem;
+}
+
+/* ── Modal ───────────────────────────────────────────────────── */
+.admin-modal-overlay {
+  position: fixed; inset: 0; z-index: 500;
+  background: rgba(0,0,0,0.6); backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center; padding: 1rem;
+}
+.admin-modal {
+  background: var(--color-surface); border: 1px solid var(--color-border);
+  border-radius: 16px; width: 100%; max-width: 580px;
+  animation: modal-in 0.2s ease both;
+}
+@keyframes modal-in {
+  from { opacity: 0; transform: scale(0.96) translateY(-10px); }
+  to   { opacity: 1; transform: scale(1)    translateY(0);     }
+}
+.admin-modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 1rem 1.25rem; border-bottom: 1px solid var(--color-border);
+  font-weight: 600;
+}
+.admin-modal-header button {
+  background: none; border: none; color: var(--color-muted);
+  cursor: pointer; font-size: 1rem; padding: 0.2rem;
+  border-radius: 6px; transition: background var(--transition);
+}
+.admin-modal-header button:hover { background: var(--color-surface2); }
+.admin-modal-body   { padding: 1.25rem; }
+.admin-modal-footer {
+  display: flex; justify-content: flex-end; gap: 0.5rem;
+  padding: 1rem 1.25rem; border-top: 1px solid var(--color-border);
+}
+
+/* ── Upload Progress ─────────────────────────────────────────── */
+.upload-progress {
+  background: var(--color-surface); border: 1px solid var(--color-border);
+  border-radius: 10px; padding: 0.75rem 1.25rem;
+  display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem;
+  font-size: 0.82rem;
+}
+.upload-bar  { flex: 1; height: 6px; background: var(--color-surface2); border-radius: 99px; overflow: hidden; }
+.upload-fill { height: 100%; background: var(--color-primary); border-radius: 99px; transition: width 0.5s ease; width: 0; }
+
+/* ── Spinner ─────────────────────────────────────────────────── */
+.spinner {
+  width: 24px; height: 24px; border: 2px solid var(--color-border);
+  border-top-color: var(--color-primary); border-radius: 50%;
+  animation: spin 0.7s linear infinite; margin: 0 auto;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Chat History ────────────────────────────────────────────── */
+.history-row {
+  display: flex; gap: 0.5rem; align-items: flex-start;
+  padding: 0.5rem; border-radius: 8px; margin-bottom: 0.35rem;
+}
+.history-user      { background: rgba(108,99,255,0.08); }
+.history-assistant { background: rgba(0,217,200,0.05);  }
+.history-role  { font-size: 1rem; flex-shrink: 0; }
+.history-msg   { flex: 1; line-height: 1.5; }
+.history-time  { font-size: 0.68rem; color: var(--color-muted); flex-shrink: 0; white-space: nowrap; }
+
+/* ── Responsive ──────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .admin-page-header { flex-direction: column; }
+  .admin-table th:nth-child(n+4), .admin-table td:nth-child(n+4) { display: none; }
+}
