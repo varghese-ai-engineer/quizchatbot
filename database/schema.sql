@@ -58,13 +58,20 @@ CREATE TABLE IF NOT EXISTS credit_transactions (
 ) ENGINE=InnoDB;
 
 -- ─── Quiz Topics ─────────────────────────────────────────────
+-- knowledge_file_id links each topic to the .md file it was generated from.
+-- ON DELETE CASCADE: deleting a knowledge file removes its topic automatically,
+-- which then cascades to quiz_questions → quiz_answers.
 CREATE TABLE IF NOT EXISTS quiz_topics (
-    id          INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    name        VARCHAR(100) NOT NULL,
-    slug        VARCHAR(100) NOT NULL UNIQUE,
-    description TEXT         NULL,
-    is_active   TINYINT(1)   NOT NULL DEFAULT 1,
-    created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
+    id                INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    knowledge_file_id INT UNSIGNED  NULL,               -- FK to knowledge_files
+    name              VARCHAR(100)  NOT NULL,
+    slug              VARCHAR(100)  NOT NULL UNIQUE,
+    description       TEXT          NULL,
+    is_active         TINYINT(1)    NOT NULL DEFAULT 1,
+    created_at        DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (knowledge_file_id)
+        REFERENCES knowledge_files(id) ON DELETE CASCADE,
+    INDEX idx_knowledge_file_id (knowledge_file_id)
 ) ENGINE=InnoDB;
 
 -- ─── Quiz Questions ──────────────────────────────────────────

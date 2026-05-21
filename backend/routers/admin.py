@@ -68,11 +68,28 @@ async def upload_knowledge_file(
     async def _generate_quiz_bg():
         try:
             from services.quiz_generator import generate_and_store_questions
-            from db.mysql import SessionLocal
+            from db.mysql import SessionLocal, fetch_one as db_fetch_one
             bg_db = SessionLocal()
             try:
-                result = await generate_and_store_questions(dest, bg_db)
-                logger.info("Quiz auto-generation result for %s: %s", file.filename, result)
+                # Wait up to 30 s for the ingest script to register the file in MySQL
+                import asyncio
+                kf_id = None
+                for _ in range(6):
+                    row = db_fetch_one(
+                        bg_db,
+                        "SELECT id FROM knowledge_files WHERE filename = :fn",
+                        {"fn": file.filename},
+                    )
+                    if row:
+                        kf_id = row["id"]
+                        break
+                    await asyncio.sleep(5)
+
+                result = await generate_and_store_questions(dest, bg_db, knowledge_file_id=kf_id)
+                logger.info(
+                    "Quiz auto-generation result for %s: %s (knowledge_file_id=%s)",
+                    file.filename, result, kf_id
+                )
             finally:
                 bg_db.close()
         except Exception as e:
@@ -95,26 +112,53 @@ def delete_knowledge_file(
     db: Session = Depends(get_db),
     _=Depends(_require_admin),
 ):
+    # ── Step 1: Physical file ────────────────────────────────
     dest = KNOWLEDGE_DIR / filename
     if dest.exists():
         dest.unlink()
+        logger.info("Deleted physical file: %s", filename)
 
-    # Remove from MySQL
-    execute(db, "DELETE FROM knowledge_files WHERE filename = :fn", {"fn": filename})
-
-    # Remove from ChromaDB via ingest script (stale cleanup on next run)
-    # For immediate removal — call ChromaDB directly via service
+    # ── Step 2: ChromaDB vectors ─────────────────────────────
     try:
         from db.chroma import get_collection
         collection = get_collection()
         old = collection.get(where={"source": filename})
         if old["ids"]:
             collection.delete(ids=old["ids"])
-            logger.info("Deleted %d chunks for %s from ChromaDB", len(old["ids"]), filename)
+            logger.info("Deleted %d ChromaDB chunks for %s", len(old["ids"]), filename)
     except Exception as e:
-        logger.warning("ChromaDB delete error: %s", e)
+        logger.warning("ChromaDB delete error for %s: %s", filename, e)
 
-    return {"status": "ok", "message": f"{filename} deleted."}
+    # ── Step 3: MySQL knowledge_files row ────────────────────
+    # CASCADE from knowledge_files automatically removes:
+    #   answer_aliases (ON DELETE CASCADE)
+    #   quiz_topics    (ON DELETE CASCADE) → quiz_questions → quiz_answers
+    kf_row = fetch_one(db, "SELECT id FROM knowledge_files WHERE filename = :fn", {"fn": filename})
+    if kf_row:
+        kf_id = kf_row["id"]
+        # Verify cascade coverage — log what will be removed
+        topic_count = fetch_one(db,
+            "SELECT COUNT(*) AS cnt FROM quiz_topics WHERE knowledge_file_id = :id",
+            {"id": kf_id}
+        )
+        alias_count = fetch_one(db,
+            "SELECT COUNT(*) AS cnt FROM answer_aliases WHERE knowledge_file_id = :id",
+            {"id": kf_id}
+        )
+        logger.info(
+            "Deleting knowledge_file id=%s ('%s'): will cascade-delete %s topic(s), %s alias(es)",
+            kf_id, filename,
+            topic_count["cnt"] if topic_count else 0,
+            alias_count["cnt"] if alias_count else 0,
+        )
+        execute(db, "DELETE FROM knowledge_files WHERE id = :id", {"id": kf_id})
+    else:
+        # File wasn't in MySQL — still attempt cleanup by filename
+        execute(db, "DELETE FROM knowledge_files WHERE filename = :fn", {"fn": filename})
+        logger.warning("knowledge_files row not found for '%s' — deleted by filename anyway", filename)
+
+    logger.info("Delete complete for '%s'", filename)
+    return {"status": "ok", "message": f"{filename} and all related data deleted."}
 
 
 @router.post("/knowledge/reindex/{filename}")

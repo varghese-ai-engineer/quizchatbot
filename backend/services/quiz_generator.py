@@ -222,17 +222,36 @@ async def translate_questions(questions: list[dict], language: str) -> list[dict
         return questions
 
 
-def _get_or_create_topic(db: Session, topic_name: str, slug: str) -> int:
-    """Get existing topic id or create a new one. Returns topic id."""
+def _get_or_create_topic(
+    db: Session,
+    topic_name: str,
+    slug: str,
+    knowledge_file_id: Optional[int] = None,
+) -> int:
+    """
+    Get existing topic id or create a new one.
+    Always updates knowledge_file_id so re-uploads re-link correctly.
+    Returns topic id.
+    """
     row = fetch_one(db, "SELECT id FROM quiz_topics WHERE slug = :slug", {"slug": slug})
     if row:
+        # Re-link to current file if knowledge_file_id is provided
+        if knowledge_file_id is not None:
+            execute(
+                db,
+                "UPDATE quiz_topics SET knowledge_file_id = :fid, is_active = 1 WHERE id = :id",
+                {"fid": knowledge_file_id, "id": row["id"]},
+            )
         return row["id"]
     topic_id = execute(
         db,
-        "INSERT INTO quiz_topics (name, slug, description, is_active) VALUES (:name, :slug, :desc, 1)",
-        {"name": topic_name, "slug": slug, "desc": f"Auto-generated from {topic_name}.md"},
+        """INSERT INTO quiz_topics (knowledge_file_id, name, slug, description, is_active)
+           VALUES (:fid, :name, :slug, :desc, 1)""",
+        {"fid": knowledge_file_id, "name": topic_name,
+         "slug": slug, "desc": f"Auto-generated from {topic_name}.md"},
     )
-    logger.info("Quiz generator — created new topic '%s' (id=%s)", topic_name, topic_id)
+    logger.info("Quiz generator — created new topic '%s' (id=%s, file_id=%s)",
+                topic_name, topic_id, knowledge_file_id)
     return topic_id
 
 
@@ -276,13 +295,18 @@ def _insert_questions(db: Session, topic_id: int, questions: list[dict]) -> int:
 async def generate_and_store_questions(
     md_path: Path,
     db: Session,
+    knowledge_file_id: Optional[int] = None,
 ) -> dict:
     """
     Full pipeline:
       1. Read .md file
       2. Generate questions via LLM
       3. Translate to Tamil + Hindi
-      4. Store in MySQL
+      4. Store in MySQL (deletes old questions for this topic first on re-upload)
+
+    knowledge_file_id: the ID of the knowledge_files row for this .md file.
+    When provided, the quiz topic is linked to it so deleting the file
+    auto-deletes the topic + questions via ON DELETE CASCADE.
 
     Returns summary dict with counts.
     """
@@ -290,7 +314,8 @@ async def generate_and_store_questions(
     topic_name = md_path.stem.replace("_", " ").replace("-", " ").title()
     slug = md_path.stem.lower().replace("_", "-")
 
-    logger.info("Quiz generator — starting for '%s'", filename)
+    logger.info("Quiz generator — starting for '%s' (knowledge_file_id=%s)",
+                filename, knowledge_file_id)
 
     # 1. Read content
     try:
@@ -313,15 +338,21 @@ async def generate_and_store_questions(
     # 4. Translate to Hindi
     questions = await translate_questions(questions, "hi")
 
-    # 5. Get or create quiz topic
-    topic_id = _get_or_create_topic(db, topic_name, slug)
+    # 5. Get or create quiz topic (linked to knowledge_file_id)
+    topic_id = _get_or_create_topic(db, topic_name, slug, knowledge_file_id)
 
-    # 6. Insert into MySQL
+    # 6. Delete OLD questions for this topic before re-inserting
+    #    This ensures re-uploading a file replaces stale questions cleanly.
+    from db.mysql import execute as db_execute
+    db_execute(db, "DELETE FROM quiz_questions WHERE topic_id = :tid", {"tid": topic_id})
+    logger.info("Quiz generator — cleared old questions for topic_id=%s before re-insert", topic_id)
+
+    # 7. Insert into MySQL
     inserted = _insert_questions(db, topic_id, questions)
 
     logger.info(
-        "Quiz generator — ✅ %d questions inserted for topic '%s' (id=%s)",
-        inserted, topic_name, topic_id,
+        "Quiz generator — ✅ %d questions inserted for topic '%s' (id=%s, file_id=%s)",
+        inserted, topic_name, topic_id, knowledge_file_id,
     )
     return {
         "status":    "ok",
