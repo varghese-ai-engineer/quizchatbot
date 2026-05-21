@@ -282,7 +282,7 @@ async function sendMessage(text) {
 
     // Create bot bubble
     const botRow = createMessageRow('assistant', '');
-    botBubble = botRow.querySelector('.message-bubble--bot');
+    botBubble = botRow.querySelector('.message-bubble--assistant');
     messagesContainer.appendChild(botRow);
     _addCursor(botBubble);
     scrollToBottom();
