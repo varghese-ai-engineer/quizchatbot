@@ -200,29 +200,35 @@ async def llm_semantic_check(
     """
     Domain-agnostic YES/NO semantic equivalence check.
 
-    The prompt contains ZERO hardcoded domain examples.
-    It reasons generically about abbreviations, nicknames, partial names,
-    and aliases — regardless of the subject domain.
+    Handles single entities, multi-entity answers (e.g. 'CSK and Mumbai'),
+    abbreviations, nicknames, and partial names.
 
-    Returns True if YES, False if NO or on any LLM/network error.
+    Returns True if YES, False if NO.
+    On LLM error: returns True (benefit of doubt — fuzzy already confirmed uncertain zone).
     """
     prompt = (
-        f"You are a quiz answer evaluator.\n"
+        f"You are a strict quiz answer evaluator.\n"
         f"Question: {question}\n"
         f"Correct Answer: {correct_answer}\n"
         f"Student Answer: {user_answer}\n\n"
-        "Task: Determine whether the student's answer clearly refers to the\n"
-        "same real-world entity (person, place, organization, concept, or event)\n"
-        "as the correct answer.\n\n"
-        "ACCEPT (answer YES) if any of these are true:\n"
-        "  - The student answer is a well-known abbreviation of the correct answer\n"
-        "  - The student answer is a widely-used nickname or alias\n"
-        "  - The student answer is a partial name that unambiguously identifies the correct answer\n"
-        "  - The core factual meaning is the same even if phrased differently\n\n"
+        "Task: Decide if the student's answer conveys the same factual meaning\n"
+        "as the correct answer. The answer may contain one or more entities\n"
+        "(people, teams, places, organizations, etc.).\n\n"
+        "ACCEPT (answer YES) if ALL of these are true for each part:\n"
+        "  - Each entity in the student answer matches (fully or by abbreviation/nickname)\n"
+        "    the corresponding entity in the correct answer\n"
+        "  - Abbreviations count: 'CSK' = 'Chennai Super Kings', 'MI' = 'Mumbai Indians'\n"
+        "  - Shortened names count: 'Mumbai' = 'Mumbai Indians', 'Dhoni' = 'MS Dhoni'\n"
+        "  - Word order does not matter for lists\n"
+        "  - Extra filler words like 'and', 'both', 'the' can be ignored\n\n"
         "REJECT (answer NO) if:\n"
-        "  - The student answer refers to a clearly different entity\n"
+        "  - Any entity in the student answer clearly refers to something different\n"
         "  - The student answer is factually wrong\n"
-        "  - The student answer is too vague or ambiguous to be accepted\n\n"
+        "  - Key entities from the correct answer are completely missing and not implied\n\n"
+        "Examples of YES:\n"
+        "  Correct: 'Chennai Super Kings and Mumbai Indians'  Student: 'CSK and Mumbai' → YES\n"
+        "  Correct: 'MS Dhoni'                               Student: 'Dhoni'          → YES\n"
+        "  Correct: 'Rajasthan Royals'                       Student: 'RR'             → YES\n\n"
         "Reply with ONLY one word: YES or NO"
     )
     try:
@@ -240,8 +246,11 @@ async def llm_semantic_check(
         return is_yes
 
     except Exception as exc:
-        logger.warning("LLM semantic check failed (%s) — defaulting NO", exc)
-        return False
+        # Fuzzy already confirmed this is in the uncertain zone (not clearly wrong).
+        # Defaulting to True gives benefit of doubt rather than penalising the student
+        # for a network/timeout issue.
+        logger.warning("LLM semantic check failed (%s) — defaulting YES (benefit of doubt)", exc)
+        return True
 
 
 # ─────────────────────────────────────────────────────────────────────────────
