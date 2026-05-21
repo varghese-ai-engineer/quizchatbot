@@ -1,11 +1,24 @@
 """
 Chat Router — /api/chat (SSE streaming)
+
+SSE frame format (typed events):
+  retry: 5000
+
+  event: token
+  data: {"token": "..."}
+
+  event: meta
+  data: {"source": "...", "credits": 99}
+
+  event: done
+  data: [DONE]
 """
 from __future__ import annotations
 
 import asyncio
 import json
 import logging
+import traceback
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
@@ -21,26 +34,48 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _token_event(token: str) -> str:
+    """Format a typed SSE token frame."""
+    return f"event: token\ndata: {json.dumps({'token': token})}\n\n"
+
+
+def _meta_event(payload: dict) -> str:
+    """Format a typed SSE metadata frame (source, credits, debug_prompt)."""
+    return f"event: meta\ndata: {json.dumps(payload)}\n\n"
+
+
+def _done_event() -> str:
+    """Format the terminal SSE frame."""
+    return "event: done\ndata: [DONE]\n\n"
+
+
 async def _event_generator(body: ChatRequest, db: Session):
     """
     Core SSE generator:
-    1. Credit check
-    2. Intent detection (smalltalk | sql | quiz | rag)
-    3. Stream from appropriate service with heartbeat pings
-    4. Deduct credit
-    5. Save chat history
+    1. Emit retry hint
+    2. Credit check
+    3. Intent detection (smalltalk | sql | quiz | rag)
+    4. Stream from appropriate service with heartbeat pings
+    5. Deduct credit
+    6. Save chat history
     """
-    logger.info("Chat — user_id=%s  lang=%s  msg=%r", body.user_id, body.language, body.message[:60])
+    logger.info(
+        "Chat — user_id=%s  lang=%s  msg=%r",
+        body.user_id, body.language, body.message[:60],
+    )
 
-    # ── 1. Credit check ───────────────────────────────────────
+    # ── 0. Retry hint — browser auto-reconnects after 5s on drop ──
+    yield "retry: 5000\n\n"
+
+    # ── 1. Credit check ───────────────────────────────────────────
     user = fetch_one(
         db,
         "SELECT id, credits FROM users WHERE id = :uid AND is_active = 1 LIMIT 1",
         {"uid": body.user_id},
     )
     if not user:
-        yield f"data: {json.dumps({'token': '⚠️ User not found.'})}\n\n"
-        yield "data: [DONE]\n\n"
+        yield _token_event("⚠️ User not found.")
+        yield _done_event()
         return
 
     if user["credits"] <= 0:
@@ -49,23 +84,25 @@ async def _event_generator(body: ChatRequest, db: Session):
             "ta": "⚠️ உங்கள் credits தீர்ந்துவிட்டன. Support-ஐ தொடர்பு கொள்ளுங்க.",
             "hi": "⚠️ आपके credits खत्म हो गए हैं। Support से संपर्क करें।",
         }.get(body.language, "⚠️ No credits remaining.")
-        yield f"data: {json.dumps({'token': msg})}\n\n"
-        yield "data: [DONE]\n\n"
+        yield _token_event(msg)
+        yield _done_event()
         return
 
-    # ── 2. Intent detection ───────────────────────────────────
+    # ── 2. Intent detection ───────────────────────────────────────
     intent = detect_intent(body.message)
     logger.info("Intent: %s", intent)
 
     # ── 3. Smalltalk — instant reply, no LLM, no credit deduction ─
     if intent == "smalltalk":
         reply = get_smalltalk_reply(body.message, body.language)
-        yield f"data: {json.dumps({'token': reply})}\n\n"
-        yield "data: [DONE]\n\n"
+        yield _token_event(reply)
+        yield _done_event()
         return
 
-    # ── Check prompt debug flag (admin only) ──────────────────
-    debug_flag_row = fetch_one(db, "SELECT show_prompt_debug FROM global_ai_settings WHERE id=1", {})
+    # ── Check prompt debug flag (admin only) ──────────────────────
+    debug_flag_row = fetch_one(
+        db, "SELECT show_prompt_debug FROM global_ai_settings WHERE id=1", {}
+    )
     show_debug = bool(debug_flag_row["show_prompt_debug"]) if debug_flag_row else False
 
     full_response = ""
@@ -80,7 +117,9 @@ async def _event_generator(body: ChatRequest, db: Session):
                     await queue.put(chunk)
 
             elif intent == "sql":
-                async for chunk in sql_stream(body.user_id, body.message, body.language, db):
+                async for chunk in sql_stream(
+                    body.user_id, body.message, body.language, db
+                ):
                     await queue.put(chunk)
 
             elif intent == "quiz":
@@ -95,63 +134,83 @@ async def _event_generator(body: ChatRequest, db: Session):
             logger.exception("Service error: %s", exc)
             await queue.put({"token": f"⚠️ Error: {exc}"})
         finally:
-            await queue.put(None)
+            await queue.put(None)  # sentinel
 
     task = asyncio.create_task(_producer())
 
+    # ── 4. Consume queue, emit SSE frames ─────────────────────────
     while True:
         try:
             chunk = await asyncio.wait_for(asyncio.shield(queue.get()), timeout=3.0)
         except asyncio.TimeoutError:
-            yield ": heartbeat\n\n"
+            yield ": heartbeat\n\n"   # SSE comment — keeps connection alive
             continue
 
         if chunk is None:
-            break
+            break  # producer finished
 
         if "token" in chunk:
             full_response += chunk["token"]
-            yield f"data: {json.dumps({'token': chunk['token']})}\n\n"
+            yield _token_event(chunk["token"])
+
         if "source" in chunk:
             source_file = chunk["source"]
-            yield f"data: {json.dumps({'source': source_file})}\n\n"
+
         if "debug_prompt" in chunk:
             debug_prompt = chunk["debug_prompt"]
 
     await task
 
-    # Emit debug prompt if flag is ON
+    # ── 5. Emit metadata (source + debug_prompt) ──────────────────
+    meta: dict = {}
+    if source_file:
+        meta["source"] = source_file
     if show_debug and debug_prompt:
-        yield f"data: {json.dumps({'debug_prompt': debug_prompt})}\n\n"
+        meta["debug_prompt"] = debug_prompt
+    if meta:
+        yield _meta_event(meta)
 
-    # ── 5. Deduct 1 credit ────────────────────────────────────
+    # ── 6. Deduct 1 credit ────────────────────────────────────────
     new_credits = max(0, user["credits"] - 1)
-    execute(db, "UPDATE users SET credits = :c WHERE id = :uid", {"c": new_credits, "uid": body.user_id})
+    execute(
+        db,
+        "UPDATE users SET credits = :c WHERE id = :uid",
+        {"c": new_credits, "uid": body.user_id},
+    )
     try:
         execute(
             db,
-            "INSERT INTO credit_transactions (user_id, delta, reason, balance) VALUES (:uid,-1,'chat_message',:b)",
+            "INSERT INTO credit_transactions (user_id, delta, reason, balance) "
+            "VALUES (:uid, -1, 'chat_message', :b)",
             {"uid": body.user_id, "b": new_credits},
         )
     except Exception:
         pass
-    yield f"data: {json.dumps({'credits': new_credits})}\n\n"
 
-    # ── 6. Save chat history ──────────────────────────────────
+    yield _meta_event({"credits": new_credits})
+
+    # ── 7. Save chat history ──────────────────────────────────────
     try:
-        execute(db,
-            "INSERT INTO chat_history (user_id, role, message, intent, language) VALUES (:uid,'user',:msg,:intent,:lang)",
+        execute(
+            db,
+            "INSERT INTO chat_history (user_id, role, message, intent, language) "
+            "VALUES (:uid, 'user', :msg, :intent, :lang)",
             {"uid": body.user_id, "msg": body.message, "intent": intent, "lang": body.language},
         )
-        execute(db,
-            "INSERT INTO chat_history (user_id, role, message, intent, source_file, language) VALUES (:uid,'assistant',:msg,:intent,:src,:lang)",
-            {"uid": body.user_id, "msg": full_response, "intent": intent, "src": source_file, "lang": body.language},
+        execute(
+            db,
+            "INSERT INTO chat_history (user_id, role, message, intent, source_file, language) "
+            "VALUES (:uid, 'assistant', :msg, :intent, :src, :lang)",
+            {
+                "uid": body.user_id, "msg": full_response,
+                "intent": intent, "src": source_file, "lang": body.language,
+            },
         )
     except Exception as exc:
         logger.warning("Chat history save failed: %s", exc)
 
     logger.info("Chat done — intent=%s  credits_left=%d", intent, new_credits)
-    yield "data: [DONE]\n\n"
+    yield _done_event()
 
 
 @router.post("/chat")
@@ -159,5 +218,9 @@ async def chat(body: ChatRequest, db: Session = Depends(get_db)) -> StreamingRes
     return StreamingResponse(
         _event_generator(body, db),
         media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
+        headers={
+            "Cache-Control":    "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection":       "keep-alive",
+        },
     )
