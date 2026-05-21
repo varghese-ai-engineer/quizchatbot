@@ -178,6 +178,95 @@ def reindex_knowledge_file(
     return {"status": "ok", "message": f"Re-indexing {filename} started."}
 
 
+@router.post("/knowledge/retranslate/{topic_id}")
+async def retranslate_topic_questions(
+    topic_id: int,
+    db: Session = Depends(get_db),
+    _=Depends(_require_admin),
+):
+    """
+    Re-translate all questions for a topic using the latest improved prompts.
+    Fixes existing bad Tamil/Hindi translations without requiring file re-upload.
+    Runs in background — returns immediately.
+    """
+    topic = fetch_one(db, "SELECT id, name FROM quiz_topics WHERE id = :id", {"id": topic_id})
+    if not topic:
+        raise HTTPException(status_code=404, detail="Topic not found.")
+
+    async def _retranslate_bg():
+        try:
+            from services.quiz_generator import translate_questions
+            from db.mysql import SessionLocal, fetch_all as db_fetch_all, execute as db_execute
+            import json
+            bg_db = SessionLocal()
+            try:
+                rows = db_fetch_all(bg_db, """
+                    SELECT id, question, answer, options, type
+                    FROM quiz_questions WHERE topic_id = :tid AND is_active = 1
+                """, {"tid": topic_id})
+
+                if not rows:
+                    logger.info("Retranslate — no questions found for topic_id=%s", topic_id)
+                    return
+
+                # Build list compatible with translate_questions()
+                questions = []
+                for i, r in enumerate(rows):
+                    questions.append({
+                        "idx":      i,
+                        "question": r["question"],
+                        "answer":   r["answer"],
+                        "type":     r["type"],
+                        "options":  json.loads(r["options"]) if r["options"] else None,
+                    })
+
+                # Re-translate Tamil
+                q_ta = await translate_questions(questions, "ta")
+                # Re-translate Hindi
+                q_hi = await translate_questions(q_ta, "hi")
+
+                # Build lookup by idx
+                ta_map = {q["idx"]: q for q in q_ta}
+                hi_map = {q["idx"]: q for q in q_hi}
+
+                updated = 0
+                for i, r in enumerate(rows):
+                    ta = ta_map.get(i, {})
+                    hi = hi_map.get(i, {})
+                    opts_ta = json.dumps(ta.get("options_ta"), ensure_ascii=False) if ta.get("options_ta") else None
+                    opts_hi = json.dumps(hi.get("options_hi"), ensure_ascii=False) if hi.get("options_hi") else None
+                    db_execute(bg_db, """
+                        UPDATE quiz_questions
+                        SET question_ta = :q_ta, answer_ta = :a_ta, options_ta = :o_ta,
+                            question_hi = :q_hi, answer_hi = :a_hi, options_hi = :o_hi
+                        WHERE id = :qid
+                    """, {
+                        "q_ta": ta.get("question_ta", r["question"]),
+                        "a_ta": ta.get("answer_ta",   r["answer"]),
+                        "o_ta": opts_ta,
+                        "q_hi": hi.get("question_hi", r["question"]),
+                        "a_hi": hi.get("answer_hi",   r["answer"]),
+                        "o_hi": opts_hi,
+                        "qid":  r["id"],
+                    })
+                    updated += 1
+
+                logger.info("Retranslate ✅ %d questions updated for topic_id=%s", updated, topic_id)
+            finally:
+                bg_db.close()
+        except Exception as e:
+            logger.error("Retranslate failed for topic_id=%s: %r", topic_id, e)
+
+    import asyncio
+    asyncio.create_task(_retranslate_bg())
+    return {
+        "status": "ok",
+        "message": f"Re-translation started for topic '{topic['name']}' ({topic_id}). "
+                   f"Questions will update in background (check logs).",
+        "topic_id": topic_id,
+    }
+
+
 class UpdateRulesRequest(BaseModel):
     filename: str
     ai_language_rules: str

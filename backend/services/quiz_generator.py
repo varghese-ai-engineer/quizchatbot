@@ -58,21 +58,42 @@ Return the JSON array:"""
 
 
 _TRANSLATE_PROMPT_TA = """\
-Translate these quiz questions from English to SIMPLE, SPOKEN Tamil mixed with English words.
+Translate these quiz questions from English to NATURAL TANGLISH — the casual Tamil+English mix
+that Indian cricket fans actually speak. NOT formal written Tamil.
 
-STRICT RULES:
-1. Keep ALL player names in ENGLISH: Chris Gayle, MS Dhoni (NEVER transliterate)
-2. Keep ALL team names in ENGLISH: CSK, MI, RCB, KKR (NEVER write in Tamil script)
-3. Keep ALL numbers in ENGLISH: 175*, 358, 2013
-4. Use simple spoken Tamil for question and answer text
-5. Do NOT transliterate English words into Tamil script
-6. Return ONLY valid JSON — no explanation
+TONE: Like a Chennai fan explaining cricket to a friend.
 
-CORRECT example:
-  English: "Who scored the most runs in IPL history?"
+NEVER translate these — keep them EXACTLY in English:
+  - Tournament names: IPL, T20, ODI, Test, World Cup
+  - Team names: CSK, MI, RCB, KKR, RR, SRH, DC, PBKS, GT, LSG
+  - Player names: MS Dhoni, Rohit Sharma, Virat Kohli, etc.
+  - Stats: runs, wickets, centuries, strike rate, average, economy
+  - Match terms: over, innings, final, playoffs, powerplay, qualifier
+  - Actions: caught, bowled, lbw
+  - Other sports terms: title, titles, trophy, record, season, captain
+
+BANNED translations (these are WRONG — never use them):
+  "இல்புறம்" or "இல்புரம்" — WRONG for IPL. Always write: IPL
+  "நாய்" — WRONG for team/won. Use: அணி (for team) or வென்றனர் (for won)
+  "திடல்" or "காலிகளை" — WRONG for title/titles. Always write: titles
+  "சம்பந்தக்" or "கொள்வதிருந்தார்" — meaningless filler, never use
+  "போட்ட" — WRONG for won. Use: வென்ற
+
+CORRECT Tanglish examples:
+  English: "Who won the first IPL title?"
+  Tamil:   "முதல் IPL title வென்ற அணி எது?"
+
+  English: "How many IPL titles has MS Dhoni won as captain?"
+  Tamil:   "MS Dhoni captain-ஆ இருந்து எத்தனை IPL titles வென்னாரு?"
+
+  English: "Which team has won the most IPL titles?"
+  Tamil:   "எந்த அணி அதிக IPL titles வென்றுள்ளது?"
+
+  English: "Who scored the highest runs in IPL history?"
   Tamil:   "IPL history-ல் அதிக runs யார் அடிச்சாங்க?"
 
-Translate ONLY question, answer, options fields. Keep id, type, difficulty exactly the same.
+Translate ONLY question, answer, options fields.
+Keep id, type, difficulty EXACTLY the same — do not change them.
 
 Questions JSON:
 {questions_json}
@@ -81,21 +102,35 @@ Return translated JSON array:"""
 
 
 _TRANSLATE_PROMPT_HI = """\
-Translate these quiz questions from English to SIMPLE, SPOKEN Hindi mixed with English words.
+Translate these quiz questions from English to NATURAL HINGLISH — the casual Hindi+English mix
+that Indian cricket fans actually speak. NOT formal written Hindi.
 
-STRICT RULES:
-1. Keep ALL player names in ENGLISH: Chris Gayle, MS Dhoni (NEVER transliterate)
-2. Keep ALL team names in ENGLISH: CSK, MI, RCB, KKR (NEVER write in Hindi script)
-3. Keep ALL numbers in ENGLISH: 175*, 358, 2013
-4. Use simple spoken Hindi for question and answer text
-5. Do NOT transliterate English words into Hindi script
-6. Return ONLY valid JSON — no explanation
+TONE: Like a Mumbai fan explaining cricket to a friend.
 
-CORRECT example:
-  English: "Who scored the most runs in IPL history?"
+NEVER translate these — keep them EXACTLY in English:
+  - Tournament names: IPL, T20, ODI, Test, World Cup
+  - Team names: CSK, MI, RCB, KKR, RR, SRH, DC, PBKS, GT, LSG
+  - Player names: MS Dhoni, Rohit Sharma, Virat Kohli, etc.
+  - Stats: runs, wickets, centuries, strike rate, average, economy
+  - Match terms: over, innings, final, playoffs, powerplay, qualifier
+  - Other sports terms: title, titles, trophy, record, season, captain
+
+BANNED translations (these are WRONG — never use them):
+  "आईपीएल" — WRONG for IPL. Always write: IPL
+  "खिताब" — avoid for titles. Prefer: titles
+
+CORRECT Hinglish examples:
+  English: "Who won the first IPL title?"
+  Hindi:   "पहला IPL title किस team ने जीता?"
+
+  English: "How many IPL titles has MS Dhoni won as captain?"
+  Hindi:   "MS Dhoni ने captain बनकर कितने IPL titles जीते?"
+
+  English: "Who scored the highest runs in IPL history?"
   Hindi:   "IPL history में सबसे ज्यादा runs किसने बनाए?"
 
-Translate ONLY question, answer, options fields. Keep id, type, difficulty exactly the same.
+Translate ONLY question, answer, options fields.
+Keep id, type, difficulty EXACTLY the same — do not change them.
 
 Questions JSON:
 {questions_json}
