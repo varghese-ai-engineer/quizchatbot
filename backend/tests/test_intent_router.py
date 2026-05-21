@@ -44,6 +44,54 @@ class TestIntentRouter:
     def test_sql_credits(self):
         assert detect_intent("How many credits do I have left?") == "sql"
 
+    # ── NEW: natural test/performance phrasings ───────────────
+    def test_sql_how_i_performed_recent_test(self):
+        """User's actual message that was misrouted to RAG."""
+        assert detect_intent("how i performed my recent test") == "sql"
+
+    def test_sql_recent_test(self):
+        assert detect_intent("show me my recent test") == "sql"
+
+    def test_sql_last_test(self):
+        assert detect_intent("how did i do in my last test?") == "sql"
+
+    def test_sql_my_test(self):
+        assert detect_intent("what happened in my test?") == "sql"
+
+    def test_sql_how_i_did(self):
+        assert detect_intent("how i did in the quiz") == "sql"
+
+    def test_sql_did_i_pass(self):
+        assert detect_intent("did i pass the quiz?") == "sql"
+
+    def test_sql_did_i_fail(self):
+        assert detect_intent("did i fail?") == "sql"
+
+    def test_sql_marks(self):
+        assert detect_intent("what are my marks?") == "sql"
+
+    def test_sql_rank(self):
+        assert detect_intent("what is my rank?") == "sql"
+
+    def test_sql_my_stats(self):
+        assert detect_intent("show my stats") == "sql"
+
+    def test_sql_quiz_history(self):
+        assert detect_intent("show my quiz history") == "sql"
+
+    def test_sql_test_history(self):
+        assert detect_intent("my test history") == "sql"
+
+    def test_sql_recent_quiz(self):
+        assert detect_intent("my recent quiz results") == "sql"
+
+    def test_sql_perform_variant(self):
+        assert detect_intent("how did i perform in my test") == "sql"
+
+    def test_sql_tamil_style_english(self):
+        """Common phrasing from Tamil-English users."""
+        assert detect_intent("how i performed in test") == "sql"
+
     # ── Quiz intent ───────────────────────────────────────────
     def test_quiz_start(self):
         assert detect_intent("Test my Python skills") == "quiz"
@@ -66,6 +114,9 @@ class TestIntentRouter:
 
     def test_case_insensitive_score(self):
         assert detect_intent("MY SCORE IN LAST QUIZ") == "sql"
+
+    def test_case_insensitive_recent_test(self):
+        assert detect_intent("HOW I PERFORMED MY RECENT TEST") == "sql"
 
     # ── Edge cases ────────────────────────────────────────────
     def test_empty_string_defaults_rag(self):

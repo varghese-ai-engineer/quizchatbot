@@ -36,8 +36,32 @@ _BYE_REPLIES = {
 
 # ── SQL / Score intent ────────────────────────────────────────
 _SQL_PATTERNS = [
-    r"\bscore\b", r"\bresult\b", r"\bhow did i\b",
-    r"\blast quiz\b", r"\bmy performance\b", r"\bmy progress\b",
+    # Explicit score/result words
+    r"\bscore\b",
+    r"\bresult\b",
+    r"\bmarks?\b",
+    r"\brank\b",
+    # Performance queries
+    r"\bhow did i\b",
+    r"\bhow i did\b",
+    r"\bhow i perform",          # "how i performed", "how i perform"
+    r"\bi perform",              # "how did i perform"
+    r"\bmy performance\b",
+    r"\bmy progress\b",
+    r"\bmy stats?\b",
+    # Test/quiz history references
+    r"\blast quiz\b",
+    r"\blast test\b",
+    r"\brecent quiz\b",
+    r"\brecent test\b",
+    r"\bmy quiz\b",
+    r"\bmy test\b",
+    r"\bquiz history\b",
+    r"\btest history\b",
+    # Pass/fail queries
+    r"\bdid i pass\b",
+    r"\bdid i fail\b",
+    # Credits
     r"\bcredits?\b",
 ]
 
