@@ -43,3 +43,6 @@ npm-debug.log*
 
 # ── ChromaDB local files ──────────────────────────────────────
 chroma/
+
+# ── Internal / Demo documents (DO NOT PUBLISH) ───────────────
+DEMO_WALKTHROUGH.md
